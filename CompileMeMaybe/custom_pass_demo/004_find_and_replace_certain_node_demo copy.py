@@ -22,33 +22,23 @@ class MyModule(torch.nn.Module):
 
 class MyCustomPass(CustomGraphPass):
     def __call__(self, graph: torch.fx.Graph) -> None:
-        for node in graph.nodes:
-            print(f"Node: {node}, src: {node.args[0] if len(node.args) > 0 else None}")
-        print("-" * 100)
-        print(f"Graph: {graph}")
-        # Passing `op` as string, `target` is the actual type, not string
-        for node in graph.find_nodes(
-            op="call_function", target=torch.ops.aten.mul.Tensor
-        ):
-            print(f"Found mul node: {node}")
-        print("-" * 100)
-        for node in graph.find_nodes(
-            op="placeholder",
-        ):
-            print(f"Found placeholder node: {node}")
-        print("-" * 100)
-        for node in graph.find_nodes(
-            op="call_function", target=torch.ops.aten.relu.default
+        for node in list(
+            graph.find_nodes(op="call_function", target=torch.ops.aten.relu.default)
         ):
             print(f"Found ReLU node: {node}")
             src = node.args[0]
-            # Replace all uses of the node with the source node
-            node.replace_all_uses_with(src)
+            # Create a replacement node (example: replace ReLU with Sigmoid)
+            # Set an insertion point right after (or before) the current node
+            with graph.inserting_after(node):
+                new_node = graph.call_function(
+                    torch.ops.aten.sigmoid.default, args=(src,), kwargs={}
+                )
+            # Redirect all uses to the new node, then erase the old node
+            node.replace_all_uses_with(new_node)
             graph.erase_node(node)
 
         graph.lint()
-        print("-" * 100)
-        print(f"after erasing ReLU node, Graph: {graph}")
+        print(f"after replacing ReLU with Sigmoid, Graph: {graph}")
 
     def uuid(self) -> Optional[Any]:
         return get_hash_for_files((__file__,))
